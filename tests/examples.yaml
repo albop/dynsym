@@ -1,0 +1,84 @@
+symbols:
+  - α
+  - c[0]
+  - c[1]
+  - c[-1]
+  - y[t]
+  - y[t+1]
+  - y[t-1]
+  - y[~]
+
+models:
+
+  dynamic_equations: |
+    α * c[t]^(1-σ) + (1-α) * y[t]^(1-σ) = 1
+    c[t] = y[t] - k * (y[t+1] - y[t])
+    y[t] - k * (y[t+1] - y[t])
+
+  deep_parameters: |
+    σ <- 2
+    α <- 0.36
+    k <- 0.5
+
+  parameters: |
+    β <- 0.98
+    r <- 1/β - 1
+
+  free_block: |
+    σ <- 2
+    α <- 0.36
+    k <- 0.5
+    β <- 0.98
+    r <- 1/β - 1
+    α*c[t]^(1-σ) + (1-α) * y[t]^(1-σ) = 1
+    c[t] = y[t] - k * (y[t+1] - y[t])
+
+  neoclassical: |
+    # Parameters
+    σ <- 2
+    α <- 0.36
+    k <- 0.5
+    β <- 0.98
+    δ <- 0.1
+    r <- 1/β - 1
+
+    # Initial steady state
+    k[~] <- ((1/β - 1 + δ) / α)^(1/(α-1))
+    y[~] <- k[~]^α
+    c[~] <- y[~] - δ * k[~]
+
+    # Dynamic equations
+    y[t] = k[t]^α
+    k[t+1] = (1-δ) * k[t] + y[t] - c[t]
+    1 = β * (1 + α * k[t+1]^(α-1) - δ) * (c[t]/c[t+1])^σ
+
+  rbc: |
+    
+    # Parameters
+    alpha <- 0.36
+    rho   <- 0.95
+    tau   <- 0.025
+    beta  <- 0.99
+    delta <- 0.025
+    psi   <- 0
+    theta <- 2.95
+    phi   <- 0.1
+
+    # Initial steady state
+    y[~] <- 1.08068253095672
+    c[~] <- 0.80359242014163
+    h[~] <- 0.29175631001732
+    k[~] <- 11.08360443260358
+    a[~] <- 0
+    b[~] <- 0
+    e[t] <- 0
+    u[t] <- 0
+
+    # Dynamic equations
+    c[t]*theta*h[t]^(1+psi)=(1-alpha)*y[t]
+    k[t] = beta*(((exp(b[t])*c[t])/(exp(b[t+1])*c[t+1]))*(exp(b[t+1])*alpha*y[t+1]+(1-delta)*k[t]))
+    y[t] = exp(a[t])*(k[t-1]^alpha)*(h[t]^(1-alpha))
+    k[t] = exp(b[t])*(y[t]-c[t])+(1-delta)*k[t-1]
+    a[t] = rho*a[t-1]+tau*b[t-1] + e[t]
+    b[t] = tau*a[t-1]+rho*b[t-1] + u[t]
+
