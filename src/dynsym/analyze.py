@@ -37,7 +37,8 @@ class FormulaEvaluator(Interpreter):
             'exogenous': []
         }
         self.equations = {}
-        
+        self.time_set = False
+
         # Add default mathematical functions
         from .autodiff import MATH_FUNCTIONS
         self.function_table.update(MATH_FUNCTIONS)
@@ -140,12 +141,18 @@ class FormulaEvaluator(Interpreter):
         index = str(tree.children[1].children[0])  # Usually 't'
         shift = int(tree.children[2].children[0])
         
-        if self.steady_state:
-            key = name
+        # TODO deal with index ~
+        vars = self.symbols['variables']
+        if name not in vars:
+            vars.append(name)
+        
+        if self.time_set:
+            time = self.symbol_table['t'] + shift
+            key = f"{name}[{time}]"
+        elif self.steady_state:
+            # from rich import print
+            key = f"{name}[~]"
         else:
-            vars = self.symbols['variables']
-            if name not in vars:
-                vars.append(name)
 
             # Create a key for the symbol table
             if shift == 0:
@@ -154,7 +161,7 @@ class FormulaEvaluator(Interpreter):
                 key = f"{name}[{index}+{shift}]"
             else:
                 key = f"{name}[{index}{shift}]"
-            
+
         if key in self.symbol_table:
             return self.symbol_table[key]
         else:
@@ -185,55 +192,95 @@ class FormulaEvaluator(Interpreter):
         
         name = str(symbol_tree.children[0].children[0])
         
-        if self.steady_state:
-            key = name
-            if self.diff and symbol_tree.data in ("variable", 'value'):
-                value = DN(value, {key: 1.0})
-            self.symbol_table[key] = value
-        else:
+        # if self.steady_state:
+        #     key = name
+        #     if self.diff and symbol_tree.data in ("variable", 'value'):
+        #         value = DN(value, {key: 1.0})
+        #     self.symbol_table[key] = value
+        # else:
             # Extract symbol name based on symbol type
-            if symbol_tree.data == "constant":
-                key = name
-                if name not in self.symbols['constants']:
-                    self.symbols['constants'].append(name)
-                self.symbol_table[key] = value
-            elif symbol_tree.data == "value":
-                if name not in self.symbols['values']:
-                    self.symbols['values'].append(name)
-                time = int(symbol_tree.children[1].children[0])
-                key = f"{name}[{time}]"
-                self.symbol_table[key] = value
+        if symbol_tree.data == "constant":
+            key = name
+            if name in self.symbols['constants']:
+                print(f"Warning: constant {name} redefined")
+            else:
+                self.symbols['constants'].append(name)
+            self.symbol_table[key] = value
+        elif symbol_tree.data == "value":
+            if name not in self.symbols['values']:
+                self.symbols['values'].append(name)
+            time = int(symbol_tree.children[1].children[0])
+            key = f"{name}[{time}]"
+            self.symbol_table[key] = value
 
-            elif symbol_tree.data == "variable":
-                index = str(symbol_tree.children[1].children[0])
-                time = int(symbol_tree.children[2].children[0])
-                if index=='~':
-                    self.symbol_table[f"{name}[~]"] = value
+        elif symbol_tree.data == "variable":
+            index = str(symbol_tree.children[1].children[0])
+            shift = int(symbol_tree.children[2].children[0])
+            
+
+            if index=='~':
+                key = f"{name}[~]"
+                self.symbol_table[key] = value
+            else:
+                if name in self.symbols['exogenous']:
+                    print(f"Warning: invalid redefinition of variable {name}.")
                 else:
-                    if name not in self.symbols['exogenous']:
-                        self.symbols['exogenous'].append(name)
-                keys = [f"{name}[t-1]",f"{name}[t]",f"{name}[t+1]"]
-                for k in keys:
-                    if self.diff:
-                        self.symbol_table[k] = DN(value, {k: 1.0})
-                    else:
-                        self.symbol_table[k] = value
-
-
-                # else:
-                #     raise Exception("Invalid variable assignement.")
-                # shift = int(symbol_tree.children[2].children[0])
-                # if self.steady_state is not True:
-                #     if shift == 0:
-                #         key = f"{name}[{index}]"
-                #     elif shift > 0:
-                #         key = f"{name}[{index}+{shift}]"
-                #     else:
-                #         key = f"{name}[{index}{shift}]"
-        
+                    self.symbols['exogenous'].append(name)
+                assert shift == 0
+                if shift == 0:
+                    key = f"{name}[{index}]"
+                elif shift > 0:
+                    key = f"{name}[{index}+{shift}]"
+                else:
+                    key = f"{name}[{index}{shift}]"
+                self.symbol_table[key] = value
+                # we set the steady state value as well
+                ss_key = f"{name}[~]"
+                self.symbol_table[ss_key] = value
 
         return value
     
+    def quantified_assignment(self, tree):
+        bounds = tree.children[0]
+        assert(bounds.data == 't_double_bound')
+        lower = self.visit(bounds.children[0])
+        upper = self.visit(bounds.children[1])
+        try:
+            assert( isinstance(lower,int) and isinstance(upper, int) and lower<upper)
+        except:
+            raise ValueError(f"Invalid bounds in quantified assignment: {lower}, {upper}")
+        from rich import print, inspect
+        print("Lower:", lower, "Upper:", upper)
+        dates = range(lower, upper)
+            # if name in self.symbols['exogenous']:
+            #     print(f"Warning: invalid redefinition of variable {name}.")
+            # else:
+            #     self.symbols['exogenous'].append(name)
+        t_val = self.symbol_table.get('t', None)
+        self.time_set = True
+
+        for d in dates:
+
+            symbol_tree = tree.children[1]
+            self.symbol_table['t'] = d
+            value = self.visit(tree.children[2])
+            
+            name = str(symbol_tree.children[0].children[0])
+            index = str(symbol_tree.children[1].children[0])
+            shift = int(symbol_tree.children[2].children[0])
+            assert index=='t' and shift==0
+            key = f"{name}[{d}]"
+            self.symbol_table[key] = value
+
+        if t_val is not None:
+            self.symbol_table['t'] = t_val
+        else:
+            self.symbol_table.pop('t')
+        self.time_set = False
+            # # we set the steady state value as well
+            # ss_key = f"{name}[~]"
+            # self.symbol_table[ss_key] = value
+
     # Block handling
     def assignment_block(self, tree):
         """Handle a block of assignments"""

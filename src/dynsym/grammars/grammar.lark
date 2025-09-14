@@ -2,7 +2,7 @@
 
 equation_block: _NEWLINE? (equation) (_NEWLINE equation )* _NEWLINE?
 assignment_block: _NEWLINE? (assignment) (_NEWLINE assignment )* _NEWLINE?
-free_block: _NEWLINE? (equation | assignment) (_NEWLINE (equation | assignment) )* _NEWLINE?
+free_block: _NEWLINE? (equation | assignment | quantified_assignment) (_NEWLINE (equation | assignment | quantified_assignment) )* _NEWLINE?
 
 
 ?equation: equality | formula
@@ -11,6 +11,16 @@ equality: formula "=" formula
 
 assignment: symbol _ASSIGN formula
 
+COMPARISON:  ("<="|"<"|">"|">=")
+// t_inequality: "t" COMPARISON formula -> t_bound
+t_double_bound: formula "<=" "t" "<" formula
+// t_inequalities: (t_inequality) ("," t_inequality)* -> t_bounds
+
+// predicate: [quantifier "," t_condition] (equality | inequality)
+
+quantified_assignment: _FORALL "t" ["," t_double_bound] ":" variable _ASSIGN formula
+
+_FORALL: "∀"
 _ASSIGN.1: (":=" | "<-")
 
 
@@ -63,7 +73,7 @@ NAME: UNICODE_LETTER ("_"|UNICODE_LETTER|DIGIT)*
 %import common.WS_INLINE
 %import common.NEWLINE
 
-COMMENT : /#[^\r\n]+\n/
+COMMENT.10 : /#[^\r\n]+\n/
 %ignore COMMENT
 
 %ignore WS_INLINE
