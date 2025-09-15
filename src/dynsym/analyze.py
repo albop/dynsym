@@ -57,6 +57,7 @@ class FormulaEvaluator(Interpreter):
             'steady_state': [],
             'process': []
         }
+        self.values = {}
         self.equations = []
         self.time_set = False
         self.errors = []
@@ -235,12 +236,15 @@ class FormulaEvaluator(Interpreter):
             else:
                 self.symbols['constants'].append(name)
             self.symbol_table[key] = value
+
         elif symbol_tree.data == "value":
             if name not in self.symbols['values']:
                 self.symbols['values'].append(name)
+                self.values[name] = {}
             time = int(symbol_tree.children[1].children[0])
             key = f"{name}[{time}]"
             self.symbol_table[key] = value
+            self.values[name][time] = value
 
         elif symbol_tree.data == "variable":
             index = str(symbol_tree.children[1].children[0])

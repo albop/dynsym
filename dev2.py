@@ -6,7 +6,7 @@ fe = FormulaEvaluator()
 
 def import_model(filename):
 
-    txt = open(filename).read()
+    txt = open(filename, mode="r", encoding="utf-8").read()
     tree = parser.parse(txt, start="free_block")
 
     fe = FormulaEvaluator()
@@ -19,12 +19,10 @@ def import_model(filename):
 
     variables = fe.variables
 
-    print("variables: "+str.join(",", variables))
-
     exogenous = [v for v in variables if (v in fe.symbols['process']) or (v in fe.symbols['values']) ]
     endogenous = [v for v in variables if v not in exogenous]
-    print("exogenous: "+str.join(",", exogenous))
-    print("endogenous: "+str.join(",", endogenous))
+    fe.exogenous = exogenous
+    fe.endogenous = endogenous
 
     import copy
     def compute_residuals():
@@ -83,19 +81,32 @@ def import_model(filename):
     
     r, A, B, C, D = compute_derivatives(ys, ys, ys, es)
 
+
+   
+
     return fe, ys, r, A, B, C, D
 
 
 import time
 # warm up
-import_model("example.dyno")
+import_model("neo.dyno")
 
 t1 = time.time()
-res = import_model("example.dyno")
+res = import_model("neo.dyno")
 t2 = time.time()
-print(f"* Residuals: {res[1]}")
+
+print(f"* Steady-state: {res[1]}")
+print(f"* Residuals: {res[2]}")
+print(f"* A\n: {res[3]}")
+print(f"* B\n: {res[4]}")
+print(f"* C\n: {res[5]}")
+print(f"* D\n: {res[6]}")
+
+
 
 print(f"Elapsed: {t2 - t1}")
 
 from rich import print, inspect
 
+fe = res[0]
+print(fe.values)
