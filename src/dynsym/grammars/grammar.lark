@@ -20,7 +20,7 @@ t_double_bound: formula "<=" "t" "<" formula
 
 quantified_assignment: _FORALL "t" ["," t_double_bound] ":" variable _ASSIGN formula
 
-_FORALL: "∀"
+_FORALL.1: ("∀" | "forall")
 _ASSIGN.1: (":=" | "<-")
 
 
@@ -58,7 +58,7 @@ variable: cname  "[" time_index time_shift  "]" -> variable
 
 !cname: NAME -> name
     
-?call: cname "(" formula ")" -> call
+?call: cname "(" formula ("," formula)* ")" -> call
 
 SIGNED_INT2: ("+"|"-") INT
 
