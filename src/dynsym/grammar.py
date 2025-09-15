@@ -162,7 +162,7 @@ class Printer(Interpreter):
         return f"({a})/({b})"
 
     def call(self, tree):
-        funname = tree.children[0].value
+        funname = tree.children[0].children[0].value
         args = self.visit(tree.children[1])
         return f"{funname}({args})"
 

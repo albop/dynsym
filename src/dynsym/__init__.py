@@ -1,5 +1,5 @@
 from .grammar import parser, str_expression
-from .analyze import Analyzer
+from .analyze import FormulaEvaluator as Analyzer
 
 import numpy as np
 

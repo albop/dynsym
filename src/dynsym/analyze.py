@@ -46,20 +46,19 @@ class FormulaEvaluator(Interpreter):
             steady_state: If True, evaluates variables at their steady state (only the name of the symbol is taken into account)
         """
         super().__init__()
-        self.symbol_table = symbol_table or {}
+        # self.symbol_table = symbol_table or {}
         self.function_table = function_table or {}
         self.steady_state = steady_state
         self.diff = diff
-        self.variables = []
-        self.symbols = {
-            'constants': [],
-            'values': [],
-            'steady_state': [],
-            'process': []
-        }
+
+        self.constants = {}
+        self.processes = {}
         self.values = {}
+        self.variables = {}
+        self.steady_states = {}
+
         self.equations = []
-        self.time_set = False
+        self.time = None # None or integer
         self.errors = []
 
         # Add default mathematical functions
@@ -67,26 +66,7 @@ class FormulaEvaluator(Interpreter):
         self.function_table.update(MATH_FUNCTIONS)
 
         self.function_table.update({'N': (lambda u,v: Normal(u,v)) })
-        # self.function_table.update({
-        #     'sin': math.sin,
-        #     'cos': math.cos,
-        #     'tan': math.tan,
-        #     'exp': math.exp,
-        #     'log': math.log,
-        #     'sqrt': math.sqrt,
-        #     'abs': abs,
-        #     'max': max,
-        #     'min': min,
-        # })
-    
-    def add_symbol(self, name: str, value: Any):
-        """Add a symbol to the symbol table."""
-        self.symbol_table[name] = value
-    
-    def add_function(self, name: str, func: Callable):
-        """Add a function to the function table."""
-        self.function_table[name] = func
-    
+
     # Arithmetic operations
     def add(self, tree):
         """Handle addition: a + b"""
@@ -139,8 +119,8 @@ class FormulaEvaluator(Interpreter):
     def constant(self, tree):
         """Handle constants (symbols without time indexing)"""
         name = str(tree.children[0].children[0])
-        if name in self.symbol_table:
-            return self.symbol_table[name]
+        if name in self.constants:
+            return self.constants[name]
         else:
             raise ValueError(f"({tree.meta.line},{tree.meta.column}): Undefined value: {name}")
             # self.errors.append( DefinitionError(f"Undefined constant: {name}", tree=tree) )
@@ -153,19 +133,22 @@ class FormulaEvaluator(Interpreter):
 
         # Create a key for the symbol table
         if self.steady_state:
-            key = name
+            return self.steady_states.get(name, math.nan)
         else:
-            key = f"{name}[{time}]"
-            ### TODO: revisit this part
-        if key in self.symbol_table:
-            return self.symbol_table[key]
-        else:
-            self.errors.append(
-                DefinitionError(f"Undefined value {key}", tree=tree)
-            )
-            return math.nan
-            # raise DefinitionError(f"Undefined value {key}")
-            raise ValueError(f"Undefined value: {key}")
+            if name not in self.values:
+                self.errors.append(
+                    DefinitionError(f"Undefined value {name}[~]", tree=tree)
+                )
+                return math.nan
+            else:
+                vvs = self.values[name]
+                if time not in vvs:
+                    self.errors.append(
+                        DefinitionError(f"Undefined value {name}[{time}]", tree=tree)
+                    )
+                    return math.nan
+                else:
+                    return vvs[time]
     
     def variable(self, tree):
         """Handle variables with time indexing: name[t+shift]"""
@@ -174,35 +157,22 @@ class FormulaEvaluator(Interpreter):
         shift = int(tree.children[2].children[0])
         
         # TODO deal with index ~
-        vars = self.variables
-        if name not in vars:
-            vars.append(name)
+        if name not in self.variables:
+            self.variables[name] = {}
         
-        if self.time_set:
-            time = self.symbol_table['t'] + shift
+        if self.time is not None:
+            time = self.time + shift
             key = f"{name}[{time}]"
-        elif self.steady_state:
+            return self.values[name].get(time, math.nan)
+        elif self.steady_state or (index == '~'):
             # from rich import print
-            key = f"{name}[~]"
+            if name not in self.steady_states:
+                self.errors.append(
+                    DefinitionError(f"Undefined steady state for variable {name}[~]", tree=tree)
+                )
+            return self.steady_states.get(name, math.nan)
         else:
-
-            # Create a key for the symbol table
-            if shift == 0:
-                key = f"{name}[{index}]"
-            elif shift > 0:
-                key = f"{name}[{index}+{shift}]"
-            else:
-                key = f"{name}[{index}{shift}]"
-
-        if key in self.symbol_table:
-            return self.symbol_table[key]
-        else:
-            if "~" in key:
-                self.errors.append(DefinitionError(f"Undefined value {key}", tree=tree))
-
-            else:
-                self.errors.append(DefinitionError(f"Undefined variable {key}", tree=tree))
-            return math.nan
+            return self.variables[name].get(shift, math.nan)
     
     # Function calls
     def call(self, tree):
@@ -231,19 +201,16 @@ class FormulaEvaluator(Interpreter):
         
         if symbol_tree.data == "constant":
             key = name
-            if name in self.symbols['constants']:
+            if name in self.constants:
                 print(f"Warning: constant {name} redefined")
             else:
-                self.symbols['constants'].append(name)
-            self.symbol_table[key] = value
+                self.constants[name] = value
+            # self.symbol_table[key] = value
 
         elif symbol_tree.data == "value":
-            if name not in self.symbols['values']:
-                self.symbols['values'].append(name)
+            if name not in self.values:
                 self.values[name] = {}
             time = int(symbol_tree.children[1].children[0])
-            key = f"{name}[{time}]"
-            self.symbol_table[key] = value
             self.values[name][time] = value
 
         elif symbol_tree.data == "variable":
@@ -253,29 +220,21 @@ class FormulaEvaluator(Interpreter):
 
             if index=='~':
                 key = f"{name}[~]"
-                self.symbol_table[key] = value
-                if name not in self.symbols['values']:
-                    self.symbols['steady_state'].append(name)
+                # self.symbol_table[key] = value
+                if name not in self.steady_states:
+                    self.steady_states[name] = value
             else:
-                if name in self.symbols['process']:
-                    print(f"Warning: invalid redefinition of variable {name}.")
-                else:
-                    self.symbols['process'].append(name)
                 assert shift == 0
-                if shift == 0:
-                    key = f"{name}[{index}]"
-                elif shift > 0:
-                    key = f"{name}[{index}+{shift}]"
+                if name in self.processes:
+                    raise Exception(f"Warning: invalid redefinition of process {name}.")
                 else:
-                    key = f"{name}[{index}{shift}]"
-                self.symbol_table[key] = value
-                # we set the steady state value as well
-                ss_key = f"{name}[~]"
-                self.symbol_table[ss_key] = value.mu
+                    self.processes[name] = value
+                    self.steady_states[name] = value.mu
 
         return value
     
     def quantified_assignment(self, tree):
+
         bounds = tree.children[0]
         assert(bounds.data == 't_double_bound')
         lower = self.visit(bounds.children[0])
@@ -285,30 +244,34 @@ class FormulaEvaluator(Interpreter):
         except:
             raise ValueError(f"Invalid bounds in quantified assignment: {lower}, {upper}")
         dates = range(lower, upper)
-        t_val = self.symbol_table.get('t', None)
-        self.time_set = True
+        
+        symbol_tree = tree.children[1]
+        name = str(symbol_tree.children[0].children[0])
+
+        if name not in self.values:
+            self.values[name] = {}
 
         for d in dates:
+            
+            self.time = d
+            self.constants['t'] = d
 
-            symbol_tree = tree.children[1]
-            self.symbol_table['t'] = d
             value = self.visit(tree.children[2])
             
             name = str(symbol_tree.children[0].children[0])
             index = str(symbol_tree.children[1].children[0])
             shift = int(symbol_tree.children[2].children[0])
             assert index=='t' and shift==0
-            key = f"{name}[{d}]"
-            self.symbol_table[key] = value
 
-        if t_val is not None:
-            self.symbol_table['t'] = t_val
-        else:
-            self.symbol_table.pop('t')
-        self.time_set = False
-            # # we set the steady state value as well
-            # ss_key = f"{name}[~]"
-            # self.symbol_table[ss_key] = value
+            # self.symbol_table[key] = value
+            self.values[name][d] = value
+            
+
+        # self.time = original_time
+        self.constants.pop('t', None)
+        self.time=None
+        
+
 
     # Block handling
     def assignment_block(self, tree):
@@ -351,46 +314,3 @@ class FormulaEvaluator(Interpreter):
 #         left = self.visit(tree.children[0])
 #         right = self.visit(tree.children[1])
 #         return right - left  # Return difference for equation solving
-    
-
-
-class Analyzer:
-    """
-    A convenience class for analyzing and evaluating parsed expressions.
-    """
-    
-    def __init__(self, symbol_table: Dict[str, Any] = None, function_table: Dict[str, Callable] = None, steady_state=False, diff=True):
-        self.evaluator = FormulaEvaluator(symbol_table, function_table, steady_state=steady_state, diff=diff)
-    
-    def evaluate(self, tree: Union[Tree, str]) -> Any:
-        """
-        Evaluate a parsed tree or parse and evaluate a string.
-        
-        Args:
-            tree: Either a parsed Lark Tree or a string to parse and evaluate
-            
-        Returns:
-            The evaluated result
-        """
-        if isinstance(tree, str):
-            from .grammar import parser
-            tree = parser.parse(tree, start="formula")
-        
-        return self.evaluator.visit(tree)
-    
-    def add_symbol(self, name: str, value: Any):
-        """Add a symbol to the evaluator's symbol table."""
-        self.evaluator.add_symbol(name, value)
-    
-    def add_function(self, name: str, func: Callable):
-        """Add a function to the evaluator's function table."""
-        self.evaluator.add_function(name, func)
-    
-    def get_symbol_table(self) -> Dict[str, Any]:
-        """Get the current symbol table."""
-        return self.evaluator.symbol_table.copy()
-
-    @property
-    def symbols(self) -> Dict[str, List[str]]:
-        """Get the current symbol table."""
-        return self.evaluator.symbols.copy()

@@ -4,12 +4,10 @@ rho   <- 0.95
 tau   <- 0.025
 r <- 1.01
 beta  <- 1/r
-r <- 0.99
 delta <- 0.025
 psi   <- 0
 theta <- 2.95
 phi   <- 0.1
-rho <- 0.5
 
 T <- 20
 
@@ -22,8 +20,8 @@ a[~] <- 0
 b[~] <- 0
 
 # Define Exogenous Variables
-e[t] <- 0
-u[t] <- 0
+e[t] <- N(0, 0.002)
+u[t] <- N(0, 0.002)
 
 # Dynamic equations
 c[t]*theta*h[t]^(1+psi) = (1-alpha)*y[t]
