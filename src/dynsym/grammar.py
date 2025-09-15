@@ -55,6 +55,7 @@ parser = Lark(
     ],
     parser="lalr",
     strict=True,
+    propagate_positions=True,
     transformer=TimeFixer()
 )
 
